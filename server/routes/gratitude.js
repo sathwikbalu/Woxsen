@@ -36,7 +36,6 @@ router.post("/", auth, async (req, res) => {
       userId: req.user.userId,
       content,
       sentiment: sentiment || "Neutral",
-      date: new Date()
     });
 
     await entry.save();

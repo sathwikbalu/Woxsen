@@ -7,6 +7,7 @@ import Meditation from "../models/Meditation.js";
 import User from "../models/User.js";
 import Goal from "../models/Goal.js";
 import goalRoutes from "./goals.js";
+import mongoose from "mongoose";
 
 const router = express.Router();
 
@@ -326,6 +327,91 @@ router.get("/meditations", auth, async (req, res) => {
     res.json(meditations);
   } catch (error) {
     res.status(500).json({ message: "Server error" });
+  }
+});
+router.get("/weekly-checkins/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    // Validate User ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid user ID" });
+    }
+
+    // Fetch the last 7 check-ins, sorted by date in descending order
+    const checkins = await DailyCheckin.find({ userId })
+      .sort({ date: -1 }) // Sort by latest first
+      .limit(7); // Get last 7 entries
+
+    if (!checkins.length) {
+      return res.status(404).json({
+        message: "No check-ins found.",
+        paragraph: "No check-ins available.",
+      });
+    }
+
+    // Initialize aggregators
+    let totalMood = 0,
+      totalSleepHours = 0,
+      totalSleepQuality = 0,
+      totalAnxiety = 0,
+      totalStress = 0,
+      activityCount = 0;
+    const activities = new Set();
+    const notes = [];
+
+    // Aggregate data from check-ins
+    checkins.forEach((checkin) => {
+      totalMood += checkin.mood || 0;
+      totalSleepHours += checkin.sleep?.hours || 0;
+      totalSleepQuality += checkin.sleep?.quality || 0;
+      totalAnxiety += checkin.anxiety || 0;
+      totalStress += checkin.stress || 0;
+
+      if (Array.isArray(checkin.activities)) {
+        checkin.activities.forEach((activity) => activities.add(activity));
+        activityCount += checkin.activities.length;
+      }
+
+      if (checkin.notes) notes.push(checkin.notes);
+    });
+
+    // Calculate averages
+    const daysCount = checkins.length;
+
+    const paragraph = `
+      Over the last ${daysCount} check-ins, you reported an average mood score of ${(
+      totalMood / daysCount
+    ).toFixed(1)}.
+      Your sleep quality averaged ${(totalSleepQuality / daysCount).toFixed(
+        1
+      )} out of 5, 
+      with an average sleep duration of ${(totalSleepHours / daysCount).toFixed(
+        1
+      )} hours per night.
+      Anxiety and stress levels were ${(totalAnxiety / daysCount).toFixed(
+        1
+      )} and ${(totalStress / daysCount).toFixed(1)} respectively.
+      You engaged in ${activityCount} activities, including: ${
+      Array.from(activities).join(", ") || "None"
+    }.
+      Additional notes: "${notes.join('", "') || "None"}".
+    `.trim();
+
+    totalSleepQuality = totalSleepQuality / daysCount;
+    totalMood = totalMood / daysCount;
+    totalStress = totalStress / daysCount;
+    totalAnxiety = totalAnxiety / daysCount;
+    res.json({
+      paragraph,
+      totalSleepQuality,
+      totalMood,
+      totalAnxiety,
+      totalStress,
+      activityCount,
+    });
+  } catch (error) {
+    console.error("Error in /weekly-checkins:", error);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
